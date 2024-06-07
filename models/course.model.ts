@@ -45,7 +45,7 @@ interface ICourse extends Document {
     reviews: IReview[];
     courseData: ICourseData[];
     ratings?: number;
-    purchased?: number;
+    purchased: number;
 }
 
 const reviewSchema = new Schema<IReview>({
@@ -55,6 +55,7 @@ const reviewSchema = new Schema<IReview>({
         default: 0,
     },
     comment: String,
+    commentReplies: [Object],
 });
 
 const linkSchema = new Schema<ILink>({

@@ -268,3 +268,107 @@ export const addAnswer = catchAsyncErrors(async (req: Request, res: Response, ne
         return next(new ErrorHandler(error.message, 500));
     }
 });
+
+//add review rating course
+interface IRating {
+    review: string,
+    rating: number,
+    userId: string,
+}
+
+export const addReview = catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        
+        const userCourseList = req.user?.courses;
+        const { review, rating } = req.body as IRating;
+        const courseId = req.params.id;
+
+        const courseExists = userCourseList?.some((course: any) => course._id.toString()===courseId);
+
+        if (!courseExists) {
+            return next(new ErrorHandler("You are not eligible to access this course", 404));
+        }
+
+        const course = await CourseModel.findById(courseId);
+
+        const reviewData: any = {
+            user: req.user,
+            rating,
+            comment: review,
+        }
+
+        course?.reviews.push(reviewData);
+        
+        let avg = 0;
+
+        course?.reviews.forEach((rev: any) => {
+            avg = rev.rating;
+        });
+
+        if (course) {
+            course.ratings = avg / course.reviews.length; 
+            //one exam have 2 reviews one is 5 another one is 4 so math working like this = 9 / 2 = 4.5 ratings
+        }
+    
+        await course?.save();
+
+        const notifycation = {
+            title: "new reviews received",
+            message: `${req.user?.name} has given a review in ${course?.name}`
+        }
+
+        res.status(200).json({
+            success: true,
+            course
+        })
+
+    } catch (error: any) {
+        return next(new ErrorHandler(error.message, 500));
+    }
+});
+
+//add reply in review
+interface IReplyReview {
+    comment: string,
+    courseId: string,
+    reviewId: string,
+}
+
+export const addReplyToReview = catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        
+        const { comment, courseId, reviewId } = req.body as IReplyReview;
+        const course = await CourseModel.findById(courseId);    
+    
+        if (!course) {
+            return next(new ErrorHandler('Course not found', 404));
+        }
+
+        const review = course?.reviews.find((rev: any) => rev._id.toString()===reviewId);
+
+        if (!review) {
+            return next(new ErrorHandler('Review not found', 404));
+        }
+
+        const replyData: any = {
+            user: req.user,
+            comment,
+        }
+
+        if (review.commentReplies) {
+            review.commentReplies = [];
+        }
+
+        review.commentReplies.push(replyData);
+        
+        await course.save();
+
+        res.status(200).json({
+            success: true,
+            course
+        })
+
+    } catch (error: any) {
+        return next(new ErrorHandler(error.message, 500));
+    }
+});

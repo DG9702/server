@@ -6,6 +6,7 @@ import cookieParser from "cookie-parser"
 import { ErrorMiddleware } from "./middleware/error";
 import userRouter from "./routes/user.route";
 import courseRouter from "./routes/course.route";
+import orderRouter from "./routes/order.route";
 
 export const app = express();
 
@@ -22,9 +23,7 @@ app.use(cors({
 
 //routes
 //user
-app.use('/api/v1', userRouter);
-//course
-app.use('/api/v1', courseRouter);
+app.use('/api/v1', userRouter, courseRouter, orderRouter);
 
 //testing api
 app.get("/Dev-Learning", (req: Request, res: Response, next: NextFunction) => {
