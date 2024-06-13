@@ -87,7 +87,7 @@ export const getSingleCourse=catchAsyncErrors(async (req: Request, res: Response
         } else {
             const course=await CourseModel.findById(req.params.id).select("-courseData.videoUrl -courseData.suggestion -courseData.comments -courseData.links");
 
-            await redis.set(courseId, JSON.stringify(course));
+            await redis.set(courseId, JSON.stringify(course), 'EX', 604800); //7days
 
             res.status(200).json({
                 success: true,
@@ -294,10 +294,14 @@ export const addReview = catchAsyncErrors(async (req: Request, res: Response, ne
         const { review, rating } = req.body as IRating;
         const courseId = req.params.id;
 
-        const courseExists = userCourseList?.some((course: any) => course._id.toString()===courseId);
+        const courseExists = userCourseList?.some(
+            (course: any) => course._id.toString() === courseId.toString()
+        );
 
         if (!courseExists) {
-            return next(new ErrorHandler("You are not eligible to access this course", 404));
+            return next(
+                new ErrorHandler("You are not eligible to access this course", 404)
+            );
         }
 
         const course = await CourseModel.findById(courseId);

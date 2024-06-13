@@ -9,7 +9,7 @@ export const isAutheticated = catchAsyncErrors(async (req: Request, res: Respons
     const access_token = req.cookies.access_token as string;
 
     if (!access_token) {
-        return next(new ErrorHandler("Please login to access this resource", 400));
+        return next(new ErrorHandler("Please login to access this resources", 400));
     }
 
     const decoded = jwt.verify(access_token, process.env.ACCESS_TOKEN as string) as JwtPayload;
@@ -20,7 +20,7 @@ export const isAutheticated = catchAsyncErrors(async (req: Request, res: Respons
     const user = await redis.get(decoded.id);
 
     if (!user) {
-        return next(new ErrorHandler("user not found", 400));
+        return next(new ErrorHandler("Please login to access this resources", 400));
     }
 
     req.user = JSON.parse(user);
