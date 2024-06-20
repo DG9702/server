@@ -125,7 +125,7 @@ export const getAllCourse=catchAsyncErrors(async (req: Request, res: Response, n
                 courses,
             });
         } else {
-            const courses=await CourseModel.find().select("-courseData.videoUrl -courseData.suggestion -courseData.comments -courseData.links");
+            const courses = await CourseModel.find().sort({ createdAt: -1 });
 
             await redis.set("allCourses", JSON.stringify(courses));
 
