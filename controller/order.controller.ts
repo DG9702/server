@@ -22,6 +22,9 @@ export const createOrder = catchAsyncErrors(async (req: Request, res: Response, 
             (course: any) => course._id.toString() === courseId
         );
 
+        console.log("Check: ", courseExistInUser);
+        
+
         if (courseExistInUser) {
             return next(new ErrorHandler("You have already purchased this course", 400));
         }
@@ -74,7 +77,7 @@ export const createOrder = catchAsyncErrors(async (req: Request, res: Response, 
             message: `You have a new order from ${course?.name}`
         });
 
-        course.purchased ? course.purchased = course.purchased + 1 : course.purchased;
+        course.purchased += 1;
 
         await course?.save();
 
