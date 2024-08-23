@@ -35,7 +35,7 @@ export const registrationUser = catchAsyncErrors(
 
             const isEmailExist = await userModel.findOne({ email });
             if (isEmailExist) {
-                return next(new ErrorHandler('Email already exist', 400));
+                return next(new ErrorHandler('Email đã tồn tại', 400));
             }
 
             const user: IRegistrationBody = {
@@ -57,14 +57,14 @@ export const registrationUser = catchAsyncErrors(
             try {
                 await sendMail({
                     email: user.email,
-                    subject: 'Activate your account',
+                    subject: 'Kích hoạt tài khoản',
                     template: 'activation-mail.ejs',
                     data
                 });
 
                 res.status(201).json({
                     success: true,
-                    message: `Please check your email: ${user.email} to activate your account!`,
+                    message: `Vui lòng kiểm tra email: ${user.email} để kích hoạt tài khoản của bạn!`,
                     activationToken: activationToken.token
                 });
             } catch (error: any) {
@@ -91,7 +91,7 @@ export const createActivationToken = (user: any): IActivationToken => {
         },
         process.env.ACTIVATION_SECRET as Secret,
         {
-            expiresIn: '5m'
+            expiresIn: '60m'
         }
     );
 
@@ -116,14 +116,14 @@ export const activateUser = catchAsyncErrors(
             ) as { user: IUser; activationCode: string };
 
             if (newUser.activationCode !== activation_code) {
-                return next(new ErrorHandler('Invalid activation code', 400));
+                return next(new ErrorHandler('Mã kích hoạt không hợp lệ', 400));
             }
 
             const { name, email, password } = newUser.user;
             const existUser = await userModel.findOne({ email });
 
             if (existUser) {
-                return next(new ErrorHandler('Email already exist', 400));
+                return next(new ErrorHandler('Email đã tồn tại', 400));
             }
             const user = await userModel.create({
                 name,
@@ -132,7 +132,7 @@ export const activateUser = catchAsyncErrors(
             });
             res.status(201).json({
                 success: true,
-                message: 'User activation successful',
+                message: 'Kích hoạt tài khoản thành công',
                 user
             });
         } catch (error: any) {
@@ -154,19 +154,21 @@ export const loginUser = catchAsyncErrors(
 
             if (!email || !password) {
                 return next(
-                    new ErrorHandler('Please enter email and password', 400)
+                    new ErrorHandler('Vui lòng nhập tài khoản và mật khẩu', 400)
                 );
             }
 
             const user = await userModel.findOne({ email }).select('+password');
 
             if (!user) {
-                return next(new ErrorHandler('Invalid email or password', 400));
+                return next(
+                    new ErrorHandler('Không tìm thấy tài khoản người dùng', 400)
+                );
             }
 
             const isPasswordMatch = await user.comparePassword(password);
             if (!isPasswordMatch) {
-                return next(new ErrorHandler('Invalid email or password', 400));
+                return next(new ErrorHandler('Mật khẩu không hợp lệ', 400));
             }
 
             sendToken(user, 200, res);
@@ -214,7 +216,7 @@ export const forgotPassword = catchAsyncErrors(
 
                 res.status(201).json({
                     success: true,
-                    message: `Please check your email: ${user.email} to reset password your account!`,
+                    message: `Vui lòng kiểm tra email của bạn: ${user.email} để đặt lại mật khẩu tài khoản của bạn!`,
                     resetToken: resetToken
                 });
             } catch (error: any) {
@@ -241,7 +243,7 @@ export const createResetToken = (user: any): IResetToken => {
         },
         process.env.ACTIVATION_SECRET as Secret,
         {
-            expiresIn: '5m'
+            expiresIn: '60m'
         }
     );
 
@@ -263,21 +265,21 @@ export const resetPassword = catchAsyncErrors(
             ) as { user: IUser; resetCode: string };
 
             if (newUser.resetCode !== resetCode) {
-                return next(new ErrorHandler('Invalid reset code', 400));
+                return next(new ErrorHandler('Mã đặt lại không hợp lệ', 400));
             }
 
             const { email } = newUser.user;
             const user = await userModel.findOne({ email }).select('+password');
 
             if (!user) {
-                return next(new ErrorHandler('Invalid user', 400));
+                return next(new ErrorHandler('Tài khoản không hợp lệ', 400));
             }
             user.password = newPassword;
             user.save();
 
             res.status(201).json({
                 success: true,
-                message: 'reset password user successful',
+                message: 'Đặt lại mật khẩu thành công',
                 user
             });
         } catch (error: any) {
@@ -298,7 +300,7 @@ export const logoutUser = catchAsyncErrors(
 
             res.status(200).json({
                 success: true,
-                message: 'Logged out successfully'
+                message: 'Đăng xuất thành công'
             });
         } catch (error: any) {
             return next(new ErrorHandler(error.message, 400));
@@ -316,7 +318,7 @@ export const updateAccessToken = catchAsyncErrors(
                 process.env.REFRESH_TOKEN as string
             ) as JwtPayload;
 
-            const message = 'Could not refresh token';
+            const message = 'Không thể làm mới mã thông báo';
             if (!decoded) {
                 return next(new ErrorHandler(message, 400));
             }
@@ -324,7 +326,7 @@ export const updateAccessToken = catchAsyncErrors(
             if (!session) {
                 return next(
                     new ErrorHandler(
-                        'Please login to access this resources',
+                        'Hãy đăng nhập để thực hiện chức năng này',
                         400
                     )
                 );
@@ -335,7 +337,7 @@ export const updateAccessToken = catchAsyncErrors(
                 { id: user._id },
                 process.env.ACCESS_TOKEN as string,
                 {
-                    expiresIn: '5m'
+                    expiresIn: '60m'
                 }
             );
 
@@ -445,12 +447,15 @@ export const updatePassword = catchAsyncErrors(
 
             if (!oldPassword || !newPassword) {
                 return next(
-                    new ErrorHandler('Please enter old and new password', 400)
+                    new ErrorHandler(
+                        'Vui lòng nhập mật khẩu cũ và mật khẩu mới',
+                        400
+                    )
                 );
             }
 
             if (user?.password === undefined) {
-                return next(new ErrorHandler('Invalid user', 400));
+                return next(new ErrorHandler('Mật khẩu không hợp lệ', 400));
             }
 
             const isPasswordMatch = await user?.comparePassword(oldPassword);
@@ -532,7 +537,7 @@ export const updateProfilePicture = catchAsyncErrors(
 
             res.status(201).json({
                 success: true,
-                message: 'Avatar updated successfully',
+                message: 'Cập nhật ảnh đại diện thành công',
                 user
             });
         } catch (error: any) {
@@ -564,7 +569,7 @@ export const updateUserRole = catchAsyncErrors(
             } else {
                 res.status(400).json({
                     success: false,
-                    message: 'User not found'
+                    message: 'Không tìm thấy tài khoản'
                 });
             }
         } catch (error: any) {
@@ -582,7 +587,7 @@ export const deleteUser = catchAsyncErrors(
             const user = await userModel.findById(id);
 
             if (!user) {
-                return next(new ErrorHandler('User not found', 404));
+                return next(new ErrorHandler('Không tìm thấy tài khoản', 404));
             }
 
             await user.deleteOne({ id });
@@ -591,7 +596,7 @@ export const deleteUser = catchAsyncErrors(
 
             res.status(200).json({
                 success: true,
-                message: 'User deleted successfully'
+                message: 'Xóa tài khoản thành công'
             });
         } catch (error: any) {
             return next(new ErrorHandler(error.message, 400));

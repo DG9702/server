@@ -5,12 +5,15 @@ import {
     addComment,
     addReplyToReview,
     addReview,
+    completeCourse,
     deleteCourse,
     editCourse,
     generateVideoUrl,
     getAdminAllCourses,
+    getAdminDetailCourse,
     getAllCourses,
     getCourseByUser,
+    getMyCoursesByUser,
     getSingleCourse,
     uploadCourse
 } from '../controller/course.controller';
@@ -19,7 +22,6 @@ const courseRouter = express.Router();
 
 courseRouter.post(
     '/create-course',
-    updateAccessToken,
     isAutheticated,
     authorizeRoles('admin'),
     uploadCourse
@@ -27,7 +29,6 @@ courseRouter.post(
 
 courseRouter.put(
     '/edit-course/:id',
-    updateAccessToken,
     isAutheticated,
     authorizeRoles('admin'),
     editCourse
@@ -35,12 +36,7 @@ courseRouter.put(
 
 courseRouter.get('/get-course/:id', getSingleCourse);
 courseRouter.get('/get-courses', getAllCourses);
-courseRouter.get(
-    '/get-course-content/:id',
-    updateAccessToken,
-    isAutheticated,
-    getCourseByUser
-);
+courseRouter.get('/get-course-content/:id', isAutheticated, getCourseByUser);
 //get all courses in admin
 courseRouter.get(
     '/get-admin-courses',
@@ -49,8 +45,15 @@ courseRouter.get(
     getAdminAllCourses
 );
 
+courseRouter.get(
+    '/get-admin-course/:id',
+    isAutheticated,
+    authorizeRoles('admin'),
+    getAdminDetailCourse
+);
+
 courseRouter.put('/add-comment', isAutheticated, addComment);
-courseRouter.put('/add-answer', isAutheticated, addAnswer);
+courseRouter.put('/add-reply-comment', isAutheticated, addAnswer);
 
 courseRouter.put('/add-review/:id', isAutheticated, addReview);
 courseRouter.put(
@@ -68,5 +71,9 @@ courseRouter.delete(
 );
 
 courseRouter.post('/getVdoCipherOTP', generateVideoUrl);
+
+courseRouter.get('/getMyCoursesByUser/:id', getMyCoursesByUser);
+
+courseRouter.put('/completed-lesson', completeCourse);
 
 export default courseRouter;

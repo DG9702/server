@@ -138,6 +138,8 @@ export const editLayout = catchAsyncErrors(
                 const categoriesData = await LayoutModel.findOne({
                     type: 'Categories'
                 });
+
+                
                 const categoriesItems = await Promise.all(
                     categories.map(async (item: any) => {
                         return {

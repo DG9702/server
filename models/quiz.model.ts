@@ -34,11 +34,14 @@ const commentReplySchema = new Schema<ICommentReply>({
     }
 });
 
-const commentSchema = new Schema<IComment>({
-    user: Object,
-    comment: String,
-    commentReplies: [commentReplySchema]
-});
+const commentSchema = new Schema<IComment>(
+    {
+        user: Object,
+        comment: String,
+        commentReplies: [commentReplySchema]
+    },
+    { timestamps: true }
+);
 
 const questionSchema = new Schema<IQuestion>({
     answer: {

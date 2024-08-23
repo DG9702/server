@@ -14,6 +14,7 @@ import sendMail from '../utils/sendMail';
 import NotificationModel from '../models/notification.model';
 import LessonModel, { ILesson } from '../models/lesson.model';
 import QuizModel, { IQuiz } from '../models/quiz.model';
+import userModel from '../models/user.model';
 
 interface ICreateCourseBody {
     name: string;
@@ -51,7 +52,7 @@ export const uploadCourse = catchAsyncErrors(
             const newCourse = new CourseModel({
                 name: data.name,
                 description: data.description,
-                categories: data.categories,
+                categoryId: data.categoryId,
                 price: data.price,
                 estimatedPrice: data.estimatedPrice,
                 thumbnail: data.thumbnail,
@@ -65,11 +66,11 @@ export const uploadCourse = catchAsyncErrors(
                     tracks: section.tracks.map((track: any) => ({
                         typeTrack: track.typeTrack,
                         position: track.position,
-                        duration: track.duration,
-                        title: track.title,
-                        trackId: null // Initialize trackId as null
+                        trackId: null, // Initialize trackId as null,
+                        userCompleted: []
                     }))
-                }))
+                })),
+                course_creator: data.course_creator
             });
 
             const createdCourseDataPromises: Promise<any>[] = [];
@@ -114,7 +115,6 @@ export const uploadCourse = catchAsyncErrors(
                 createdCourseDataPromises
             );
 
-            //console.log('Check createdCourseData: ', createdCourseData);
             newCourse.courseData.map((courseData: any, index: number) => {
                 courseData.tracks.map((track: any, trackIndex: number) => {
                     createdCourseData.forEach(
@@ -144,7 +144,7 @@ export const uploadCourse = catchAsyncErrors(
     }
 );
 
-//edit course
+//edit course --- Chưa xử lý được xóa hẳn một section
 export const editCourse = catchAsyncErrors(
     async (req: Request, res: Response, next: NextFunction) => {
         try {
@@ -153,14 +153,13 @@ export const editCourse = catchAsyncErrors(
             const thumbnail = data.thumbnail;
 
             const course = (await CourseModel.findById(courseId)) as any;
-
             if (!course) {
                 return next(new ErrorHandler('Course Not found', 404));
             }
 
             if (thumbnail && !thumbnail?.startsWith('https')) {
                 await cloudinary.v2.uploader.destroy(
-                    course.thumbnail.public_id
+                    course?.thumbnail?.public_id
                 );
 
                 const myCloud = await cloudinary.v2.uploader.upload(thumbnail, {
@@ -168,24 +167,22 @@ export const editCourse = catchAsyncErrors(
                 });
 
                 data.thumbnail = {
-                    public_id: myCloud.public_id,
-                    url: myCloud.secure_url
+                    public_id: myCloud?.public_id,
+                    url: myCloud?.secure_url
                 };
             }
 
-            if (thumbnail.startsWith('https')) {
+            if (thumbnail?.startsWith('https')) {
                 data.thumbnail = {
-                    public_id: course?.thumbnail.public_id,
-                    url: course?.thumbnail.url
+                    public_id: course?.thumbnail?.public_id,
+                    url: course?.thumbnail?.url
                 };
             }
-
-            console.log('Check course: ', course);
 
             // Update course details
             course.name = req.body.name;
             course.description = req.body.description;
-            course.categories = req.body.categories;
+            course.categoryId = req.body.categoryId;
             course.price = req.body.price;
             course.estimatedPrice = req.body.estimatedPrice;
             course.tags = req.body.tags;
@@ -193,68 +190,284 @@ export const editCourse = catchAsyncErrors(
             course.demoUrl = req.body.demoUrl;
             course.benefits = req.body.benefits;
             course.prerequisites = req.body.prerequisites;
+            course.course_creator = req.body.course_creator;
 
-            // Update courseData with lectures and quizzes
             const updatedCourseData = req.body.courseData;
 
-            // Loop through each element in courseData
+            // Update courseData sections
             for (const courseDataItem of updatedCourseData) {
-                const { trackId, typeTrack, ...data } = courseDataItem; // Destructure typeTrack and other data
-                console.log('Check courseDataItem: ', courseDataItem);
+                const foundContent = course.courseData.find(
+                    (content: any) =>
+                        content._id.toString() === courseDataItem._id
+                );
 
-                if (typeTrack === 'lecture') {
-                    // Update existing lecture or create new one
-                    const lecture = await LessonModel.findByIdAndUpdate(
-                        courseDataItem.trackId, // Update if _id exists
+                if (foundContent) {
+                    foundContent.section = courseDataItem.section;
 
-                        {
-                            $set: data
-                        },
-                        { new: true, runValidators: true } // Return updated document and validate data
-                    );
+                    for (const trackItem of courseDataItem.tracks) {
+                        const { trackId, typeTrack, position, ...data } =
+                            trackItem; // Destructure typeTrack and other data
 
-                    if (!lecture) {
-                        // Create new lecture if _id doesn't exist
-                        const newLecture = new LessonModel({
-                            ...data,
-                            courseId // Add courseId to the new lecture
-                        });
-                        await newLecture.save();
+                        if (typeTrack === 'lesson') {
+                            if (
+                                trackItem.trackId &&
+                                trackItem.title === '' &&
+                                trackItem.description === '' &&
+                                trackItem.videoUrl === '' &&
+                                trackItem.duration === 0
+                            ) {
+                                await LessonModel.findByIdAndDelete({
+                                    _id: trackId
+                                });
 
-                        course.courseData.push({
-                            trackId: newLecture._id,
-                            typeTrack: 'lecture'
-                        });
-                    }
-                } else if (typeTrack === 'quiz') {
-                    // Update existing quiz or create new one (similar logic as lectures)
-                    const quiz = await QuizModel.findByIdAndUpdate(
-                        courseDataItem.trackId,
-                        {
-                            $set: data
-                        },
-                        { new: true, runValidators: true }
-                    );
+                                let deletedTrackIndex =
+                                    course.courseData.findIndex(
+                                        (section: any) =>
+                                            section.tracks.some(
+                                                (track: any) =>
+                                                    track.trackId ===
+                                                    trackItem.trackId
+                                            )
+                                    );
 
-                    if (!quiz) {
-                        const newQuiz = new QuizModel({
-                            ...data,
-                            courseId // Add courseId to the new quiz
-                        });
-                        await newQuiz.save();
+                                if (deletedTrackIndex !== -1) {
+                                    const deletedSection =
+                                        course.courseData[deletedTrackIndex];
+                                    const deletedTrackIndexInSection =
+                                        deletedSection.tracks.findIndex(
+                                            (track: any) =>
+                                                track.trackId === trackId
+                                        );
 
-                        course.courseData.push({
-                            trackId: newQuiz._id,
-                            typeTrack: 'quiz'
-                        });
+                                    course.courseData.forEach(
+                                        (section: any, i: any) => {
+                                            section.tracks.forEach(
+                                                (track: any, j: any) => {
+                                                    if (
+                                                        track.position >
+                                                        trackItem.position
+                                                    ) {
+                                                        track.position =
+                                                            track.position - 1;
+                                                    }
+                                                }
+                                            );
+                                        }
+                                    );
+                                }
+
+                                course.courseData = course.courseData.map(
+                                    (sectionData: any) => {
+                                        return {
+                                            ...sectionData,
+                                            tracks: sectionData.tracks.filter(
+                                                (track: any) =>
+                                                    track.trackId !==
+                                                    trackItem.trackId
+                                            )
+                                        };
+                                    }
+                                );
+                            } else {
+                                const lesson =
+                                    await LessonModel.findByIdAndUpdate(
+                                        trackItem.trackId, // Update if _id exists
+
+                                        {
+                                            title: data.title,
+                                            description: data.description,
+                                            section: courseDataItem.section,
+                                            videoUrl: data.videoUrl,
+                                            duration: data.duration,
+                                            links: data.links,
+                                            suggestion: data.suggestion
+                                        },
+                                        { new: true, runValidators: true } // Return updated document and validate data
+                                    );
+
+                                if (!lesson) {
+                                    const newLesson = new LessonModel({
+                                        ...data,
+                                        section: courseDataItem.section,
+                                        courseId // Add courseId to the new lecture
+                                    });
+                                    await newLesson.save();
+
+                                    course.courseData.map((data: any) => {
+                                        data.tracks.map((item: any) => {
+                                            if (item.position >= position) {
+                                                item.position =
+                                                    item.position + 1;
+                                            }
+                                        });
+
+                                        if (
+                                            data.section === newLesson.section
+                                        ) {
+                                            data.tracks.push({
+                                                typeTrack: 'lesson',
+                                                position,
+                                                trackId: newLesson._id
+                                            });
+                                        }
+                                    });
+                                }
+                            }
+                            // Update existing lecture or create new one
+                        } else if (typeTrack === 'quiz') {
+                            // Update existing quiz or create new one (similar logic as lectures)
+                            if (
+                                trackItem.trackId &&
+                                trackItem.title === '' &&
+                                trackItem.description === '' &&
+                                trackItem.content === '' &&
+                                trackItem.duration === 0
+                            ) {
+                                await QuizModel.findByIdAndDelete({
+                                    _id: trackId
+                                });
+
+                                let deletedTrackIndex =
+                                    course.courseData.findIndex(
+                                        (section: any) =>
+                                            section.tracks.some(
+                                                (track: any) =>
+                                                    track.trackId ===
+                                                    trackItem.trackId
+                                            )
+                                    );
+
+                                if (deletedTrackIndex !== -1) {
+                                    const deletedSection =
+                                        course.courseData[deletedTrackIndex];
+                                    const deletedTrackIndexInSection =
+                                        deletedSection.tracks.findIndex(
+                                            (track: any) =>
+                                                track.trackId === trackId
+                                        );
+
+                                    course.courseData.forEach(
+                                        (section: any, i: any) => {
+                                            section.tracks.forEach(
+                                                (track: any, j: any) => {
+                                                    if (
+                                                        track.position >
+                                                        trackItem.position
+                                                    ) {
+                                                        track.position =
+                                                            track.position - 1;
+                                                    }
+                                                }
+                                            );
+                                        }
+                                    );
+                                }
+
+                                course.courseData = course.courseData.map(
+                                    (sectionData: any) => {
+                                        return {
+                                            ...sectionData,
+                                            tracks: sectionData.tracks.filter(
+                                                (track: any) =>
+                                                    track.trackId !==
+                                                    trackItem.trackId
+                                            )
+                                        };
+                                    }
+                                );
+                            } else {
+                                const quiz = await QuizModel.findByIdAndUpdate(
+                                    trackItem.trackId,
+                                    {
+                                        title: data.title,
+                                        description: data.description,
+                                        section: courseDataItem.section,
+                                        content: data.content,
+                                        questions: data.questions,
+                                        duration: data.duration
+                                    },
+                                    { new: true, runValidators: true }
+                                );
+
+                                if (!quiz) {
+                                    const newQuiz = new QuizModel({
+                                        ...data,
+                                        section: courseDataItem.section,
+                                        courseId // Add courseId to the new quiz
+                                    });
+                                    await newQuiz.save();
+
+                                    course.courseData.map((data: any) => {
+                                        data.tracks.map((item: any) => {
+                                            if (item.position >= position) {
+                                                item.position =
+                                                    item.position + 1;
+                                            }
+                                        });
+
+                                        if (data.section === newQuiz.section) {
+                                            data.tracks.push({
+                                                typeTrack: 'quiz',
+                                                position,
+                                                trackId: newQuiz._id
+                                            });
+                                        }
+                                    });
+                                }
+                            }
+                        } else {
+                            // Handle invalid typeTrack case (throw error or log warning)
+                            throw new Error('Invalid typeTrack in courseData');
+                        }
                     }
                 } else {
-                    // Handle invalid typeTrack case (throw error or log warning)
-                    throw new Error('Invalid typeTrack in courseData');
+                    const newSection = {
+                        section: courseDataItem.section,
+                        tracks: []
+                    } as any;
+
+                    // Thêm track vào phần mới
+                    for (const trackItem of courseDataItem.tracks) {
+                        const { trackId, typeTrack, position, ...data } =
+                            trackItem;
+
+                        if (typeTrack === 'lesson') {
+                            const newLesson = new LessonModel({
+                                ...data,
+                                section: newSection.section,
+                                courseId // Thêm courseId cho bài giảng mới
+                            });
+                            await newLesson.save();
+
+                            newSection.tracks.push({
+                                typeTrack: 'lesson',
+                                position,
+                                trackId: newLesson._id
+                            });
+                        } else if (typeTrack === 'quiz') {
+                            const newQuiz = new QuizModel({
+                                ...data,
+                                section: newSection.section,
+                                courseId // Thêm courseId cho bài kiểm tra mới
+                            });
+                            await newQuiz.save();
+
+                            newSection.tracks.push({
+                                typeTrack: 'quiz',
+                                position,
+                                trackId: newQuiz._id
+                            });
+                        } else {
+                            // Xử lý trường hợp typeTrack không hợp lệ
+                            throw new Error('Invalid typeTrack in courseData');
+                        }
+                    }
+
+                    course.courseData.push(newSection);
                 }
             }
 
-            await course.save();
+            await course?.save();
 
             res.status(200).json({
                 success: true,
@@ -282,46 +495,135 @@ export const getSingleCourse = catchAsyncErrors(
                     course
                 });
             } else {
-                const course = await CourseModel.findById(req.params.id);
+                const course = await CourseModel.findById(courseId);
 
                 if (!course) {
                     // Handle the case where `course` is null or undefined
                     return next(new ErrorHandler('Course not found', 404));
                 }
 
-                const contentCourse = [];
-                for (const courseDataItem of course.courseData) {
-                    for (const courseDataTrack of courseDataItem.tracks) {
-                        const { trackId, typeTrack, ...rest } = courseDataTrack;
-                        console.log('Check courseDataItem: ', courseDataItem);
+                const transformedCourseData = await Promise.all(
+                    course.courseData.map(async (courseData) => ({
+                        section: courseData.section,
+                        tracks: await Promise.all(
+                            courseData.tracks.map(async (track) => ({
+                                trackId: track.trackId,
+                                typeTrack: track.typeTrack,
+                                position: track.position,
+                                track_step:
+                                    track.typeTrack === 'lesson'
+                                        ? await LessonModel.findById(
+                                              track.trackId
+                                          )
+                                        : await QuizModel.findById(
+                                              track.trackId
+                                          )
+                            }))
+                        )
+                    }))
+                );
 
-                        console.log('Check courseDataTrack: ', courseDataTrack);
+                const data = {
+                    _id: course._id,
+                    name: course.name,
+                    description: course.description,
+                    categoryId: course.categoryId,
+                    price: course.price,
+                    estimatedPrice: course.estimatedPrice,
+                    thumbnail: course.thumbnail,
+                    tags: course.tags,
+                    level: course.level,
+                    demoUrl: course.demoUrl,
+                    benefits: course.benefits,
+                    prerequisites: course.prerequisites,
+                    reviews: course.reviews,
+                    ratings: course.ratings,
+                    purchased: course.purchased,
+                    status: course.status,
+                    course_creator: course.course_creator,
+                    courseData: transformedCourseData
+                };
 
-                        let contentData;
-                        if (typeTrack === 'lesson') {
-                            contentData = await LessonModel.findById(
-                                trackId
-                            ).select('-videoUrl -suggestion -comments -links');
-                        } else if (typeTrack === 'quiz') {
-                            contentData = await QuizModel.findById(
-                                trackId
-                            ).select(
-                                '-title -description -content -questions -comments'
-                            );
-                        }
-
-                        contentCourse.push(contentData);
-                    }
-                }
-
-                await redis.set(courseId, JSON.stringify(course), 'EX', 604800); //7days
+                await redis.set(courseId, JSON.stringify(data), 'EX', 604800); //7days
 
                 res.status(200).json({
                     success: true,
-                    course,
-                    contentCourse
+                    data
                 });
             }
+        } catch (error: any) {
+            next(new ErrorHandler(error.message, 500));
+        }
+    }
+);
+
+//get single course --- without purchasing
+export const getAdminDetailCourse = catchAsyncErrors(
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const courseId = req.params.id;
+            const course = await CourseModel.findById(courseId);
+
+            if (!course) {
+                // Handle the case where `course` is null or undefined
+                return next(new ErrorHandler('Course not found', 404));
+            }
+
+            const transformedCourseData = await Promise.all(
+                course.courseData.map(async (courseData) => ({
+                    _id: courseData._id,
+                    section: courseData.section,
+                    tracks: await Promise.all(
+                        courseData.tracks.map(async (track) => {
+                            const trackData = {
+                                trackId: track.trackId,
+                                typeTrack: track.typeTrack,
+                                position: track.position
+                            };
+
+                            if (track.typeTrack === 'lesson') {
+                                const lesson = await LessonModel.findById(
+                                    track.trackId
+                                ).lean();
+                                return { ...trackData, ...lesson };
+                            } else if (track.typeTrack === 'quiz') {
+                                const quiz = await QuizModel.findById(
+                                    track.trackId
+                                ).lean();
+                                return { ...trackData, ...quiz };
+                            }
+
+                            return trackData;
+                        })
+                    )
+                }))
+            );
+
+            const data = {
+                _id: course._id,
+                name: course.name,
+                description: course.description,
+                categoryId: course.categoryId,
+                price: course.price,
+                estimatedPrice: course.estimatedPrice,
+                thumbnail: course.thumbnail,
+                tags: course.tags,
+                level: course.level,
+                demoUrl: course.demoUrl,
+                benefits: course.benefits,
+                prerequisites: course.prerequisites,
+                reviews: course.reviews,
+                ratings: course.ratings,
+                purchased: course.purchased,
+                status: course.status,
+                course_creator: course.course_creator,
+                courseData: transformedCourseData
+            };
+
+            res.status(200).json({
+                success: true,
+                data
+            });
         } catch (error: any) {
             next(new ErrorHandler(error.message, 500));
         }
@@ -339,6 +641,35 @@ export const getAllCourses = catchAsyncErrors(
     }
 );
 
+//get courses -- only for user
+export const getMyCoursesByUser = catchAsyncErrors(
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const userId = req.params.id;
+
+            const userExist = await userModel.findOne({ _id: userId });
+
+            if (!userExist) {
+                return next(new ErrorHandler('user not found', 404));
+            }
+
+            const transformedCourseData = await Promise.all(
+                userExist?.courses.map(
+                    async (course) =>
+                        await CourseModel.findById(course.courseId)
+                )
+            );
+
+            res.status(200).json({
+                success: true,
+                courses: transformedCourseData
+            });
+        } catch (error: any) {
+            return next(new ErrorHandler(error.message, 500));
+        }
+    }
+);
+
 //get course content -- only for valid user
 export const getCourseByUser = catchAsyncErrors(
     async (req: Request, res: Response, next: NextFunction) => {
@@ -346,13 +677,13 @@ export const getCourseByUser = catchAsyncErrors(
             const userCourseList = req.user?.courses;
             const courseId = req.params.id;
             const courseExists = userCourseList?.find(
-                (course: any) => course._id.toString() === courseId
+                (course: any) => course.courseId === courseId
             );
 
             if (!courseExists) {
                 return next(
                     new ErrorHandler(
-                        'You are not eligible to access this course',
+                        'Bạn không đủ điều kiện để truy cập khóa học này',
                         404
                     )
                 );
@@ -365,25 +696,27 @@ export const getCourseByUser = catchAsyncErrors(
                 return next(new ErrorHandler('Course not found', 404));
             }
 
-            const content = [];
-            for (const courseDataItem of course.courseData) {
-                for (const courseDataTrack of courseDataItem.tracks) {
-                    const { trackId, typeTrack, ...rest } = courseDataTrack;
-
-                    let contentData;
-                    if (typeTrack === 'lecture') {
-                        contentData = await LessonModel.findById(trackId);
-                    } else if (typeTrack === 'quiz') {
-                        contentData = await QuizModel.findById(trackId);
-                    }
-
-                    content.push(contentData);
-                }
-            }
+            const transformedCourseData = await Promise.all(
+                course.courseData.map(async (courseData) => ({
+                    section: courseData.section,
+                    tracks: await Promise.all(
+                        courseData.tracks.map(async (track) => ({
+                            trackId: track.trackId,
+                            typeTrack: track.typeTrack,
+                            position: track.position,
+                            userCompleted: track.userCompleted,
+                            track_step:
+                                track.typeTrack === 'lesson'
+                                    ? await LessonModel.findById(track.trackId)
+                                    : await QuizModel.findById(track.trackId)
+                        }))
+                    )
+                }))
+            );
 
             res.status(200).json({
                 success: true,
-                content: content
+                content: transformedCourseData
             });
         } catch (error: any) {
             return next(new ErrorHandler(error.message, 500));
@@ -409,50 +742,55 @@ export const addComment = catchAsyncErrors(
                 return next(new ErrorHandler('Missing required fields', 400));
             }
 
+            const userCourseList = req.user?.courses;
+
+            const courseExists = userCourseList?.some(
+                (course: any) => course.courseId === courseId.toString()
+            );
+
+            if (!courseExists) {
+                return next(
+                    new ErrorHandler(
+                        'Bạn không đủ điều kiện để truy cập khóa học này',
+                        404
+                    )
+                );
+            }
+
             const course = await CourseModel.findById(courseId);
 
             if (!course) {
                 // Handle the case where `course` is null or undefined
-                return next(new ErrorHandler('Course not found', 404));
+                return next(new ErrorHandler('Không tìm thấy khóa học', 404));
             }
-
-            //const courseContent=course?.courseData?.find((item: any) => item.trackId === trackId);
-
-            //if(!courseContent) {
-            //    return next(new ErrorHandler("Invalid content id", 400))
-            //}
 
             const newComment: any = {
                 user: req.user,
                 comment,
                 commentReplies: []
             };
-
-            console.log('Check course.courseData: ', course.courseData);
-
             let model;
-            if (typeTrack === 'lecture') {
+            if (typeTrack === 'lesson') {
                 model = await LessonModel.findById(trackId);
             } else if (typeTrack === 'quiz') {
                 model = await QuizModel.findById(trackId);
             } else {
-                return next(new ErrorHandler('Invalid typeTrack', 400));
+                return next(new ErrorHandler('typeTrack không hợp lệ', 400));
             }
 
             // Check if model exists
             if (!model) {
-                return next(new ErrorHandler('Lecture or Quiz not found', 404));
+                return next(
+                    new ErrorHandler('Không tìm thấy bài học hoặc câu hỏi', 404)
+                );
             }
-
-            console.log('Check model: ', model);
-
             // Update comments array in the model
             model.comments.push(newComment); // Replace with actual user data
 
             await NotificationModel.create({
                 user: req.user?._id,
-                title: 'New Comment Received',
-                message: `You have a new comment in ${model.title}`
+                title: 'Đã nhận được hỏi đáp mới',
+                message: `Bạn có một hỏi đáp tại ${model.title}`
             });
 
             await model.save();
@@ -491,20 +829,25 @@ export const addAnswer = catchAsyncErrors(
             }: IAddAnswerData = req.body;
             const course = await CourseModel.findById(courseId);
 
-            if (!mongoose.Types.ObjectId.isValid(trackId)) {
+            if (!trackId) {
                 return next(new ErrorHandler('Invalid content id', 400));
             }
 
-            const courseContent = course?.courseData?.find(
-                (item: any) => item.trackId === trackId
-            );
+            let courseContent;
+            course?.courseData?.map((item) => {
+                item.tracks.map((track) => {
+                    if (track.trackId.toString() === trackId) {
+                        courseContent = track;
+                    }
+                });
+            });
 
             if (!courseContent) {
-                return next(new ErrorHandler('Invalid content id', 400));
+                return next(new ErrorHandler('Invalid content', 400));
             }
 
             let content;
-            if (typeTrack === 'lecture') {
+            if (typeTrack === 'lesson') {
                 content = await LessonModel.findById(trackId);
             } else if (typeTrack === 'quiz') {
                 content = await QuizModel.findById(trackId);
@@ -514,7 +857,7 @@ export const addAnswer = catchAsyncErrors(
 
             // Check if model exists
             if (!content) {
-                return next(new ErrorHandler('Lecture or Quiz not found', 404));
+                return next(new ErrorHandler('Lesson or Quiz not found', 404));
             }
 
             const commentIndex = content.comments.findIndex(
@@ -524,15 +867,6 @@ export const addAnswer = catchAsyncErrors(
                 return next(new ErrorHandler('Comment not found', 404));
             }
 
-            // Add the reply to the comment's replies array
-            console.log('Check content: ', content);
-            console.log('Check courseContent: ', courseContent);
-
-            console.log('Check commentIndex: ', commentIndex);
-
-            console.log('content[index]: ', content);
-
-            //create a new answer object
             const newAnswer: any = {
                 user: req.user,
                 reply,
@@ -542,11 +876,6 @@ export const addAnswer = catchAsyncErrors(
             content.comments[commentIndex].commentReplies?.push(newAnswer);
 
             await content.save();
-
-            ////add this answer to our course content
-            //comment.commentReplies?.push(newAnswer);
-
-            //await course?.save();
 
             if (req.user?._id === content.comments[commentIndex].user._id) {
                 await NotificationModel.create({
@@ -590,6 +919,7 @@ export const addAnswer = catchAsyncErrors(
 //add review rating course
 interface IRating {
     review: string;
+    courseId: string;
     rating: number;
     userId: string;
 }
@@ -602,7 +932,7 @@ export const addReview = catchAsyncErrors(
             const courseId = req.params.id;
 
             const courseExists = userCourseList?.some(
-                (course: any) => course._id.toString() === courseId.toString()
+                (course: any) => course.courseId === courseId.toString()
             );
 
             if (!courseExists) {
@@ -619,7 +949,7 @@ export const addReview = catchAsyncErrors(
             const reviewData: any = {
                 user: req.user,
                 rating,
-                comment: review
+                review: review
             };
 
             course?.reviews.push(reviewData);
@@ -627,7 +957,7 @@ export const addReview = catchAsyncErrors(
             let avg = 0;
 
             course?.reviews.forEach((rev: any) => {
-                avg = rev.rating;
+                avg += rev.rating;
             });
 
             if (course) {
@@ -635,12 +965,15 @@ export const addReview = catchAsyncErrors(
                 //one exam have 2 reviews one is 5 another one is 4 so math working like this = 9 / 2 = 4.5 ratings
             }
 
+            //await redis.set(courseId, JSON.stringify(course), 'EX', 604800); //7days
+
             await course?.save();
 
-            const notifycation = {
-                title: 'new reviews received',
-                message: `${req.user?.name} has given a review in ${course?.name}`
-            };
+            await NotificationModel.create({
+                user: req.user?._id,
+                title: 'Đã nhận được đánh giá mới',
+                message: `${req.user?.name} đánh giá trong ${course?.name}`
+            });
 
             res.status(200).json({
                 success: true,
@@ -674,21 +1007,25 @@ export const addReplyToReview = catchAsyncErrors(
             );
 
             if (!review) {
-                return next(new ErrorHandler('Review not found', 404));
+                return next(new ErrorHandler('Không tìm thấy đánh giá', 404));
             }
 
             const replyData: any = {
                 user: req.user,
-                comment
+                comment,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
             };
 
-            if (review.commentReplies) {
-                review.commentReplies = [];
+            if (!review.reviewReplies) {
+                review.reviewReplies = [];
             }
 
-            review.commentReplies.push(replyData);
+            review.reviewReplies.push(replyData);
 
             await course.save();
+
+            //await redis.set(courseId, JSON.stringify(course), 'EX', 604800);
 
             res.status(200).json({
                 success: true,
@@ -736,6 +1073,45 @@ export const deleteCourse = catchAsyncErrors(
             res.status(200).json({
                 success: true,
                 message: 'course deleted successfully'
+            });
+        } catch (error: any) {
+            return next(new ErrorHandler(error.message, 400));
+        }
+    }
+);
+
+export const completeCourse = catchAsyncErrors(
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const { trackId, courseId, userId } = req.body;
+
+            const course = await CourseModel.findById(courseId);
+            if (!course) {
+                return next(new ErrorHandler('course not found', 404));
+            }
+
+            for (const data of course.courseData) {
+                for (const item of data.tracks) {
+                    if (item.trackId.toString() === trackId) {
+                        const isCompleted = item?.userCompleted?.some(
+                            (comp: any) => comp.userId === userId
+                        );
+
+                        if (!isCompleted) {
+                            item?.userCompleted?.push({ userId });
+                        } else {
+                            console.log('Dã hoàn thành');
+                        }
+                    }
+                }
+            }
+
+            await course?.save();
+
+            res.status(200).json({
+                success: true,
+                message: 'completed successfully',
+                course
             });
         } catch (error: any) {
             return next(new ErrorHandler(error.message, 400));

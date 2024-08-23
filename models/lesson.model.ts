@@ -1,6 +1,5 @@
 import mongoose, { Document, Model, Schema } from 'mongoose';
 import { IComment } from './course.model';
-
 export interface ILesson extends Document {
     courseId: String;
     section: String;
@@ -31,20 +30,26 @@ const linkSchema = new Schema<ILink>({
     url: String
 });
 
-const commentReplySchema = new Schema<ICommentReply>({
-    user: Object,
-    reply: String,
-    createdAt: {
-        type: Date,
-        default: Date.now
-    }
-});
+const commentReplySchema = new Schema<ICommentReply>(
+    {
+        user: Object,
+        reply: String,
+        createdAt: {
+            type: Date,
+            default: Date.now
+        }
+    },
+    { timestamps: true }
+);
 
-const commentSchema = new Schema<IComment>({
-    user: Object,
-    comment: String,
-    commentReplies: [commentReplySchema]
-});
+const commentSchema = new Schema<IComment>(
+    {
+        user: Object,
+        comment: String,
+        commentReplies: [commentReplySchema]
+    },
+    { timestamps: true }
+);
 
 const lessonSchema = new Schema<ILesson>(
     {
